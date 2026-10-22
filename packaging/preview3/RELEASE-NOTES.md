@@ -14,10 +14,6 @@ Unpack the archive into any drawer and double-click the PhotoCraft icon. From a 
 
 ## Known limitations
 
-Use file names without accented letters. System TrueType fonts appear in the font list but
-render with a built-in font. Image clipboard exchange and opening files dropped onto the
-window are unavailable. Large documents can be slow. Letters typed with a keymap for another
-8-bit charset (such as the Polish one) come out as the wrong characters.
+Use file names without accented letters. System TrueType fonts appear in the font list but render with a built-in font. Image clipboard exchange and opening files dropped onto the window are unavailable. Large documents can be slow. Letters typed with a keymap for another 8-bit charset (such as the Polish one) come out as the wrong characters.
 
-If replacing a saved file fails after the old file has been removed, the new contents remain
-in a temporary file. The error message gives its name.
+If replacing a saved file fails after the old file has been removed, the new contents remain in a temporary file. The error message gives its name. 

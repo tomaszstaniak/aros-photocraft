@@ -32,7 +32,10 @@
     "crates/ui-egui/src/i18n/LICENSE-translations.txt",
     "crates/ui-egui/src/LICENSE-solarized.txt"
   ],
-  "source_archive_exclude": [],
+  "source_archive_exclude": [
+    "AGENTS.md",
+    "CLAUDE.md"
+  ],
   "notice_renames": {
     "assets/icons/LICENSE-noun-magnetic-lasso.txt": "assets/icons/LICENSE-noun-lasso.txt"
   }

@@ -1,0 +1,42 @@
+{
+  "title": "PhotoCraft 0.7.0 AROS ABIv11 preview 2 (rebuild 2)",
+  "version": "0.7.0",
+  "label": "preview2-r2",
+  "archive": "PhotoCraft-0.7.0-preview2-r2.x86_64-aros-v11.zip",
+  "source_archive": "PhotoCraft-0.7.0-preview2-r2-source.zip",
+  "release_notes": "RELEASE-NOTES-0.7.0-preview2-r2.md",
+  "drawer": "PhotoCraft",
+  "stack": 4000000,
+  "build": {
+    "abi": "x86_64 ABIv11",
+    "features": [
+      "--no-default-features",
+      "--features",
+      "photocraft-cli/mcp"
+    ],
+    "panic": "unwind"
+  },
+  "icon_source": "work:assets/app-icon/hicolor/64x64/apps/ai.storyteller.photocraft.png",
+  "photocraft_notices": [
+    "LICENSE-MIT",
+    "LICENSE-APACHE",
+    "NOTICE",
+    "ATTRIBUTION.md",
+    "assets/app-icon/LICENSE.txt",
+    "assets/dict/LICENSE-SCOWL.txt",
+    "assets/fonts/OFL-Inter.txt",
+    "assets/fonts/OFL-JetBrainsMono.txt",
+    "assets/icons/LICENSE-lucide.txt",
+    "assets/icons/LICENSE-noun-magnetic-lasso.txt",
+    "assets/icons/LICENSE-symmetry-axes.txt",
+    "crates/ui-egui/src/i18n/LICENSE-translations.txt",
+    "crates/ui-egui/src/LICENSE-solarized.txt"
+  ],
+  "source_archive_exclude": [
+    "AGENTS.md",
+    "CLAUDE.md"
+  ],
+  "notice_renames": {
+    "assets/icons/LICENSE-noun-magnetic-lasso.txt": "assets/icons/LICENSE-noun-lasso.txt"
+  }
+}

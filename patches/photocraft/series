@@ -21,3 +21,4 @@
 0021-photocraft-cli-run-the-command-on-a-thread-with-its-.patch
 0022-photocraft-aros-run-on-the-shared-egui-aros-integrat.patch
 0023-photocraft-aros-optional-OpenGL-build-feature-glow-G.patch
+0024-photocraft-aros-keep-the-main-task-s-startup-directo.patch

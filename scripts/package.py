@@ -65,6 +65,8 @@ def check_build(build, release):
     features = release["build"]["features"]
     if not any(command[i:i + len(features)] == features for i in range(len(command))):
         raise Failure(f"{build}: not built with {' '.join(features)}")
+    if release["build"].get("lto") == "fat" and 'profile.release.lto="fat"' not in command:
+        raise Failure(f"{build}: not built with --lto fat")
     if manifest["toolchain"]["panic"] != release["build"]["panic"] or manifest["abi"] != release["build"]["abi"]:
         raise Failure(f"{build}: profile {manifest['abi']} / panic={manifest['toolchain']['panic']} is not the release profile")
     if "linked_packages" not in manifest:
@@ -82,6 +84,24 @@ def check_build(build, release):
     if version != release["version"]:
         raise Failure(f"work copy version {version} is not the release version {release['version']}")
     return manifest
+
+
+# apkg 0.6 accepts one file of up to 128 MiB unpacked (64 MiB before 0.6).
+MEMBER_LIMIT = 128 << 20
+
+
+def stripped(data, name):
+    """The program with unneeded symbols and .comment removed: the form verified to load on AROS
+    (a full strip loses the relocations AROS applies at load time)."""
+    cfg = pcconfig.load(["aros_strip"])
+    with tempfile.TemporaryDirectory() as tmp:
+        src, dst = Path(tmp) / "in", Path(tmp) / "out"
+        src.write_bytes(data)
+        subprocess.run([cfg["aros_strip"], "--strip-unneeded", "--remove-section", ".comment", "-o", str(dst), str(src)], check=True)
+        out = dst.read_bytes()
+    if len(out) > MEMBER_LIMIT:
+        raise Failure(f"{name} is {len(out)} bytes after stripping, over apkg's 128 MiB limit for one file")
+    return out
 
 
 def third_party(manifest):
@@ -149,7 +169,7 @@ def rust_docs(manifest):
     return out
 
 
-def source_txt(release, manifest, archive_names):
+def source_txt(release, manifest, archive_names, packaged=None):
     up = manifest["upstreams"]
     lines = [release["title"], "", "Built from:",
              f"  PhotoCraft {up['photocraft']['url']} at {up['photocraft']['commit']}",
@@ -164,6 +184,9 @@ def source_txt(release, manifest, archive_names):
              "", "SHA-256 of the programs:"]
     for name, info in sorted(manifest["binaries"].items()):
         lines.append(f"  {info['sha256']}  {name}")
+    if packaged:
+        lines += ["", "As packaged (strip --strip-unneeded --remove-section .comment):"]
+        lines += [f"  {sha}  {name}" for name, sha in sorted(packaged.items())]
     return "\n".join(lines) + "\n"
 
 
@@ -198,14 +221,18 @@ def main():
         drawer = release["drawer"]
         files = {}  # archive path -> (bytes, mode)
         for name in manifest["binaries"]:
-            files[f"{drawer}/{name}"] = ((a.build / name).read_bytes(), 0o100755)
+            data = (a.build / name).read_bytes()
+            if release["build"].get("strip"):
+                data = stripped(data, name)
+            files[f"{drawer}/{name}"] = (data, 0o100755)
         with tempfile.TemporaryDirectory() as tmp:
             source = WORK / release["icon_source"].removeprefix("work:")
             subprocess.run([sys.executable, str(REPO / "scripts" / "icons.py"), str(source), tmp, drawer, str(release["stack"])], check=True)
             files[f"{drawer}.info"] = ((Path(tmp) / f"{drawer}.info").read_bytes(), 0o100644)
             files[f"{drawer}/{drawer}.info"] = ((Path(tmp) / drawer / f"{drawer}.info").read_bytes(), 0o100644)
         files[f"{drawer}/README.md"] = ((release_dir / "README.md").read_bytes(), 0o100644)
-        files[f"{drawer}/SOURCE.txt"] = (source_txt(release, manifest, names).encode(), 0o100644)
+        packaged = {n: sha256(files[f"{drawer}/{n}"][0]) for n in manifest["binaries"]} if release["build"].get("strip") else None
+        files[f"{drawer}/SOURCE.txt"] = (source_txt(release, manifest, names, packaged).encode(), 0o100644)
         renames = release.get("notice_renames", {})
         for rel in release["photocraft_notices"]:
             files[f"{drawer}/Licenses/PhotoCraft/{renames.get(rel, rel)}"] = ((WORK / rel).read_bytes(), 0o100644)

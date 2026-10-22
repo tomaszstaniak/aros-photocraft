@@ -1,0 +1,50 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: tomaszstaniak <68373859+tomaszstaniak@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 00:15:08 +0200
+Subject: [PATCH] photocraft-aros: keep the main task's startup directory lock
+ for the C library
+
+Problem: ABIv11 crt.library keeps chdir's saved directory in one base for
+  all tasks of the process, records the lock of whichever task changes
+  directory first, and restores it on the main task at exit. realpath()
+  changes directory (posixc/realpath.c: open(".") and fchdir), so a worker
+  thread that calls std::fs::canonicalize first makes the library unlock
+  the main task's Workbench startup lock at exit, which Workbench startup
+  then unlocks again (a double UnLock of freed memory).
+Here: its autosave resolves the save folder with std::fs::canonicalize on a worker thread.
+Rationale: chdir(".") on the main task before any worker starts records
+  the main task's own lock and gives the library a replacement lock it
+  owns; the directory does not change. The same change as the PdfCraft
+  AROS port's patch 0011, which a probe confirmed (CRT kept the worker's
+  lock without it, the main task's lock with it). Not reproduced as a
+  crash in PhotoCraft; the code path is the reason.
+Scope: the AROS GUI entry point; failure stops before any worker exists.
+Upstream-status: local-only; candidate for the AROS frontend.
+Verification: disk-based Workbench start and close in the port's evidence.
+Removal: when the C library keeps the saved directory per task.
+---
+ apps/photocraft-aros/src/main.rs | 11 +++++++++++
+ 1 file changed, 11 insertions(+)
+
+diff --git a/apps/photocraft-aros/src/main.rs b/apps/photocraft-aros/src/main.rs
+index 216de6f427e3207baf3a4939ef9037bf01c96720..376fb249b5f78c84e7b9f631dcddffe4cadd748d 100644
+--- a/apps/photocraft-aros/src/main.rs
++++ b/apps/photocraft-aros/src/main.rs
+@@ -116,6 +116,17 @@ fn parse_args() -> Result<Option<Options>, String> {
+ }
+ 
+ fn main() {
++    // ABIv11's C library keeps one saved directory for the whole process and
++    // restores it on the main task at exit. Whichever task changes directory
++    // first decides what is saved, and realpath() (std::fs::canonicalize)
++    // changes directory. If a worker does it first, the library later unlocks
++    // the main task's Workbench startup lock, which Workbench startup then
++    // unlocks again. chdir(".") here, before any worker, keeps the main task's
++    // own lock saved and gives the library a replacement it owns.
++    if let Err(error) = std::env::set_current_dir(".") {
++        eprintln!("photocraft: cannot preserve the startup directory: {error}");
++        std::process::exit(1);
++    }
+     install_logger();
+     let options = match parse_args() {
+         Ok(Some(o)) => o,

@@ -4,7 +4,7 @@ An AROS port of [PhotoCraft](https://github.com/storytold/photocraft), an image 
 
 ## Download and run
 
-[Download v0.7.0-preview2-r2](https://github.com/tomaszstaniak/aros-photocraft/releases/tag/v0.7.0-preview2-r2) for **AROS x86_64 ABIv11**, or find `photocraft` in the apkg catalogue. The download includes PhotoCraft and `photocraft-cli`.
+[Download v0.7.0-preview3](https://github.com/tomaszstaniak/aros-photocraft/releases/tag/v0.7.0-preview3) for **AROS x86_64 ABIv11**, or find `photocraft` in the apkg catalogue. The download includes PhotoCraft and `photocraft-cli`.
 
 These builds are experimental and not optimised. They use CPU rendering and can be slow, especially in large windows.
 

@@ -23,3 +23,5 @@
 0023-photocraft-aros-optional-OpenGL-build-feature-glow-G.patch
 0024-photocraft-aros-keep-the-main-task-s-startup-directo.patch
 0025-photocraft-aros-name-the-startup-directory-in-full-w.patch
+0026-photocraft-aros-keep-the-startup-directory-with-an-e.patch
+0027-ui-egui-make-start-up-file-names-absolute-with-Amiga.patch

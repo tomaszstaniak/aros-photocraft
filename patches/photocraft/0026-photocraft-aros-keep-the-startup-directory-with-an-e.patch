@@ -1,0 +1,85 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: tomaszstaniak <68373859+tomaszstaniak@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 08:57:06 +0200
+Subject: [PATCH] photocraft-aros: keep the startup directory with an empty
+ name, stop if it cannot be locked
+
+Problem: the previous patch named the current directory again
+  (current_dir, then chdir to that name). A name can fail to lock
+  again, and on failure the program only printed a warning, which a
+  Workbench start does not show. The patch before it also said that
+  realpath() changes directory in a worker. In the SDK this port is
+  built with (ABIv11, C library of deadwood2 5376f09), that holds only
+  for programs built with the -nix startup, such as PdfCraft, whose
+  crash it was: with AmigaDOS paths realpath() first opens ".", which
+  fails, so it returns before its chdir (probe: no saved directory
+  after realpath in a worker; AROS One 1.3, pool v11-2, 2026-10-23).
+  No worker of this program is known to change directory.
+Rationale: a preventive guard, kept in case a library starts to change
+  directory in a worker. AmigaDOS takes "" as the current directory,
+  so chdir("") locks it without a name; the probe showed the main
+  task's original lock saved and the same directory current. It fails
+  only when DOS cannot lock the directory; the program then stops with
+  return code 20 before any worker starts. The startup-dir-fault
+  feature builds a test program that takes that path.
+Scope: the AROS GUI entry point and its Cargo features.
+Upstream-status: local-only.
+Verification: see the port's 2026-10-23 review follow-up evidence.
+Removal: with the two previous startup-directory patches.
+---
+ apps/photocraft-aros/Cargo.toml  |  2 ++
+ apps/photocraft-aros/src/main.rs | 28 +++++++++++++++++++---------
+ 2 files changed, 21 insertions(+), 9 deletions(-)
+
+diff --git a/apps/photocraft-aros/Cargo.toml b/apps/photocraft-aros/Cargo.toml
+index 89cbe7bf0c23c06b5a76bb8b3928f81c765f5676..f6159bd971f6bae84804df5f1ccdc2cb7a2874c9 100644
+--- a/apps/photocraft-aros/Cargo.toml
++++ b/apps/photocraft-aros/Cargo.toml
+@@ -15,6 +15,8 @@ todo = "warn"
+ [features]
+ # Draw with OpenGL (gl.library) instead of the CPU renderer; the build needs gl.library to start.
+ glow = ["egui-aros/glow"]
++# Test build only: behave as if the startup directory could not be locked.
++startup-dir-fault = []
+ 
+ [[bin]]
+ name = "PhotoCraft"
+diff --git a/apps/photocraft-aros/src/main.rs b/apps/photocraft-aros/src/main.rs
+index 9a1533260b59f6dc96e849c99f343ace3d2f279f..68f5ab99b6209273322d229bc991c629029c0cbe 100644
+--- a/apps/photocraft-aros/src/main.rs
++++ b/apps/photocraft-aros/src/main.rs
+@@ -118,15 +118,25 @@ fn parse_args() -> Result<Option<Options>, String> {
+ fn main() {
+     // ABIv11's C library keeps one saved directory for the whole process and
+     // restores it on the main task at exit. Whichever task changes directory
+-    // first decides what is saved, and realpath() (std::fs::canonicalize)
+-    // changes directory. If a worker does it first, the library later unlocks
+-    // the main task's Workbench startup lock, which Workbench startup then
+-    // unlocks again. A chdir here, before any worker, keeps the main task's
+-    // own lock saved and gives the library a replacement it owns. The
+-    // directory is named in full: with AmigaDOS paths "." is not the current
+-    // directory. A failure only leaves the exit risk, so it does not stop.
+-    if let Err(error) = std::env::current_dir().and_then(std::env::set_current_dir) {
+-        eprintln!("photocraft: cannot preserve the startup directory: {error}");
++    // first decides what is saved. If a worker did it first, the library would
++    // later unlock the main task's Workbench startup lock, which Workbench
++    // startup then unlocks again. No code of this program changes directory
++    // in a worker today (in the SDK this is built with, realpath() with
++    // AmigaDOS paths fails before its own chdir), so this is a guard against a
++    // library change bringing that back: a chdir here, before any worker,
++    // keeps the main task's own lock saved. "" is the current directory in
++    // AmigaDOS ("." is a name), so no name has to be found again. It fails
++    // only when DOS cannot lock the directory, and then the program stops
++    // before any worker can start. A test build (`--features
++    // startup-dir-fault`) takes that path without asking DOS.
++    let kept = if cfg!(feature = "startup-dir-fault") {
++        Err(std::io::Error::other("failure forced by the startup-dir-fault test build"))
++    } else {
++        std::env::set_current_dir("")
++    };
++    if let Err(error) = kept {
++        eprintln!("photocraft: cannot keep the startup directory: {error}");
++        std::process::exit(20);
+     }
+     install_logger();
+     let options = match parse_args() {

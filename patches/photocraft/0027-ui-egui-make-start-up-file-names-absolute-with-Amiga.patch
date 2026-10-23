@@ -1,0 +1,108 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: tomaszstaniak <68373859+tomaszstaniak@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 12:43:37 +0200
+Subject: [PATCH] ui-egui: make start-up file names absolute with AmigaDOS
+ rules on AROS
+
+Problem: on AROS, a file named relatively in a Shell at a volume's root
+  (`PhotoCraft root.png` in RAM:) became `RAM Disk:/root.png`, the
+  parent of the root, and did not open ("No such file or directory",
+  AROS One 1.3, pool v11-1, 2026-10-23). std::path::absolute follows
+  POSIX rules: it adds a `/` after the colon and takes a leading `/`
+  (the parent drawer in AmigaDOS) for the root.
+Rationale: the name is joined to the current directory with AmigaDOS
+  rules: a name with a volume or assign stays as it is, a leading ":"
+  is the volume's root, each leading "/" the parent drawer. Other
+  systems keep std::path::absolute.
+Scope: crates/ui-egui file_open (AROS only); a unit test.
+Upstream-status: local-only.
+Verification: the unit test on the host; guest runs in the port's
+  evidence.
+Removal: when std or the program makes AmigaDOS paths absolute itself.
+---
+ crates/ui-egui/src/file_open.rs       | 46 ++++++++++++++++++++++++---
+ crates/ui-egui/src/file_open/tests.rs | 13 ++++++++
+ 2 files changed, 55 insertions(+), 4 deletions(-)
+
+diff --git a/crates/ui-egui/src/file_open.rs b/crates/ui-egui/src/file_open.rs
+index e29d8a04a0d41e9f1072d15af3599bce4fc89927..1265a6642c9b983d27c35e8dc1a7b3ed41759e23 100644
+--- a/crates/ui-egui/src/file_open.rs
++++ b/crates/ui-egui/src/file_open.rs
+@@ -290,14 +290,52 @@ fn digit_run(it: &mut std::iter::Peekable<std::str::Chars>) -> String {
+ 
+ #[cfg(not(target_arch = "wasm32"))]
+ fn absolute(p: &str) -> String {
+-    // An AmigaDOS path with a device or volume (`Work:Images/a.png`) is absolute already, and
+-    // std (which knows only a leading `/`) would put the current directory in front of it.
+-    if cfg!(target_os = "aros") && p.split('/').next().is_some_and(|first| first.contains(':')) {
+-        return p.to_string();
++    // AmigaDOS paths follow their own rules, and std knows only POSIX ones: it would put the
++    // current directory in front of `Work:Images/a.png`, write `RAM Disk:/a.png` (the parent of
++    // the root) for a name typed at a volume's root, and take a leading `/` (the parent drawer)
++    // for the root.
++    if cfg!(target_os = "aros") {
++        return match std::env::current_dir().ok().as_deref().and_then(std::path::Path::to_str) {
++            Some(dir) => amiga_join(dir, p),
++            None => p.to_string(),
++        };
+     }
+     std::path::absolute(p).map(|a| a.to_string_lossy().to_string()).unwrap_or_else(|_| p.to_string())
+ }
+ 
++/// `name` relative to the absolute AmigaDOS drawer `dir` (`Work:Images`, `RAM:`): a name with a
++/// volume, device or assign (`Work:a`) is absolute already, a leading `:` is the root of `dir`'s
++/// volume, and each leading `/` is the parent drawer (above a volume's root there is none, and
++/// the name is left for DOS to refuse). The rest of the name is DOS's to read.
++#[cfg_attr(not(target_os = "aros"), allow(dead_code))]
++fn amiga_join(dir: &str, name: &str) -> String {
++    if name.split('/').next().is_some_and(|first| first.contains(':')) {
++        if let Some(rest) = name.strip_prefix(':')
++            && let Some(colon) = dir.find(':')
++        {
++            return format!("{}{rest}", &dir[..=colon]);
++        }
++        return name.to_owned();
++    }
++    let mut dir = dir;
++    let mut rest = name;
++    while let Some(after) = rest.strip_prefix('/') {
++        match dir.rfind('/') {
++            Some(slash) => dir = &dir[..slash],
++            None if !dir.ends_with(':') && dir.contains(':') => dir = &dir[..=dir.find(':').unwrap_or(0)],
++            None => break,
++        }
++        rest = after;
++    }
++    if rest.is_empty() {
++        dir.to_owned()
++    } else if dir.ends_with(':') {
++        format!("{dir}{rest}")
++    } else {
++        format!("{dir}/{rest}")
++    }
++}
++
+ #[cfg(target_arch = "wasm32")]
+ fn absolute(p: &str) -> String {
+     p.to_string()
+diff --git a/crates/ui-egui/src/file_open/tests.rs b/crates/ui-egui/src/file_open/tests.rs
+index 3e6bde28b235b5400f80419a3ab30b02a2c7339e..c469e7c230496a8ad19e442abece04a3dd14e694 100644
+--- a/crates/ui-egui/src/file_open/tests.rs
++++ b/crates/ui-egui/src/file_open/tests.rs
+@@ -775,3 +775,16 @@ fn a_set_of_background_opens_keeps_its_order_however_they_finish() {
+     jobs_ui::finish_open_tab(&mut app, &late, &json!({"document": index})).unwrap();
+     assert_eq!(doc_names(&app), ["dropped.psd", "existing.psd", "f0.psd", "f1.psd", "f2.psd", "f3.psd", "late.psd"]);
+ }
++
++#[test]
++fn amiga_names_are_joined_with_amigados_rules() {
++    assert_eq!(amiga_join("Work:Images", "a.png"), "Work:Images/a.png");
++    assert_eq!(amiga_join("RAM Disk:", "a.png"), "RAM Disk:a.png", "no `/` after the colon: that is the root's parent");
++    assert_eq!(amiga_join("AROS:My Pictures", "zażółć.png"), "AROS:My Pictures/zażółć.png");
++    assert_eq!(amiga_join("Work:Images", "DH1:a.png"), "DH1:a.png");
++    assert_eq!(amiga_join("Work:Images/Sub", ":a.png"), "Work:a.png");
++    assert_eq!(amiga_join("Work:Images/Sub", "/a.png"), "Work:Images/a.png");
++    assert_eq!(amiga_join("Work:Images/Sub", "//a.png"), "Work:a.png");
++    assert_eq!(amiga_join("Work:", "/a.png"), "Work:/a.png", "above the root: left for DOS to refuse");
++    assert_eq!(amiga_join("Work:Images", "a//b.png"), "Work:Images/a//b.png");
++}

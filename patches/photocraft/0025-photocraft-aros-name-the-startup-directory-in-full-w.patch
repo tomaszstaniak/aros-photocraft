@@ -1,0 +1,44 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: tomaszstaniak <68373859+tomaszstaniak@users.noreply.github.com>
+Date: Fri, 23 Oct 2026 01:16:39 +0200
+Subject: [PATCH] photocraft-aros: name the startup directory in full when
+ keeping its lock
+
+Problem: the previous patch called chdir("."). This port uses AmigaDOS
+  paths (native startup, not the SDK's -nix), where "." names a file
+  called ".", not the current directory, so chdir failed with ENOENT and
+  the program exited at once from both Shell and Workbench (observed
+  2026-10-23, AROS One 1.3, pool v11-1).
+Rationale: std::env::current_dir() returns the AmigaDOS name of the
+  current directory, and chdir to it records the main task's lock as
+  before. A failure now prints a warning and continues: it leaves only the
+  exit risk the previous patch addresses, not a program that cannot start.
+Scope: the AROS GUI entry point.
+Upstream-status: local-only.
+Verification: see the port's 2026-10-23 evidence.
+Removal: with the previous patch.
+---
+ apps/photocraft-aros/src/main.rs | 9 +++++----
+ 1 file changed, 5 insertions(+), 4 deletions(-)
+
+diff --git a/apps/photocraft-aros/src/main.rs b/apps/photocraft-aros/src/main.rs
+index 376fb249b5f78c84e7b9f631dcddffe4cadd748d..9a1533260b59f6dc96e849c99f343ace3d2f279f 100644
+--- a/apps/photocraft-aros/src/main.rs
++++ b/apps/photocraft-aros/src/main.rs
+@@ -121,11 +121,12 @@ fn main() {
+     // first decides what is saved, and realpath() (std::fs::canonicalize)
+     // changes directory. If a worker does it first, the library later unlocks
+     // the main task's Workbench startup lock, which Workbench startup then
+-    // unlocks again. chdir(".") here, before any worker, keeps the main task's
+-    // own lock saved and gives the library a replacement it owns.
+-    if let Err(error) = std::env::set_current_dir(".") {
++    // unlocks again. A chdir here, before any worker, keeps the main task's
++    // own lock saved and gives the library a replacement it owns. The
++    // directory is named in full: with AmigaDOS paths "." is not the current
++    // directory. A failure only leaves the exit risk, so it does not stop.
++    if let Err(error) = std::env::current_dir().and_then(std::env::set_current_dir) {
+         eprintln!("photocraft: cannot preserve the startup directory: {error}");
+-        std::process::exit(1);
+     }
+     install_logger();
+     let options = match parse_args() {
